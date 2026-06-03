@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zmart Baznas Batola</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #fef2f2; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto">
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold text-red-800">Zmart Baznas Batola</h1>
+            <p class="text-red-900/70">Dashboard Monitoring 60 Mustahik</p>
+        </header>
+
+        <!-- Dashboard Statistik -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-2xl shadow-md border-l-4 border-red-600">
+                <p class="text-slate-500 text-sm">Pendapatan Rata-rata</p>
+                <h2 id="avg-income" class="text-2xl font-bold mt-1 text-red-700">Rp 0</h2>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-md border-l-4 border-red-600">
+                <p class="text-slate-500 text-sm">Tertinggi</p>
+                <h2 id="max-income" class="text-lg font-bold mt-1 text-slate-800 leading-tight">Rp 0</h2>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-md border-l-4 border-red-600">
+                <p class="text-slate-500 text-sm">Terendah</p>
+                <h2 id="min-income" class="text-lg font-bold mt-1 text-slate-800 leading-tight">Rp 0</h2>
+            </div>
+        </div>
+
+        <div class="flex justify-end mb-6">
+            <button onclick="exportAllToExcel()" class="bg-red-700 hover:bg-red-800 text-white px-6 py-2 rounded-full font-medium transition shadow-lg">
+                Export Semua (Excel)
+            </button>
+        </div>
+
+        <!-- Kartu Mustahik -->
+        <div id="mustahik-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Render via JS -->
+        </div>
+    </div>
+
+    <!-- Modal Detail -->
+    <div id="modal" class="fixed inset-0 bg-black/60 hidden items-center justify-center p-4 z-50">
+        <div class="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl">
+            <input type="text" id="edit-name" class="text-2xl font-bold border-none w-full focus:outline-none text-red-800 mb-4" oninput="updateName()">
+            
+            <div class="space-y-4">
+                <div class="flex justify-between">
+                    <span class="text-slate-500">Saldo Hari Ini:</span>
+                    <span id="modal-balance" class="font-bold">Rp 0</span>
+                </div>
+                <div class="flex gap-2">
+                    <input type="number" id="new-amount" placeholder="Jumlah (Rp)" class="border p-2 rounded-lg flex-1">
+                    <select id="new-type" class="border p-2 rounded-lg">
+                        <option value="income">Pemasukan</option>
+                        <option value="expense">Pengeluaran</option>
+                    </select>
+                    <button onclick="addTransaction()" class="bg-red-600 text-white px-4 rounded-lg">OK</button>
+                </div>
+                <div id="transaction-list" class="max-h-40 overflow-y-auto space-y-1"></div>
+            </div>
+
+            <div class="mt-6 flex gap-3">
+                <button onclick="exportIndividualToExcel()" class="flex-1 bg-slate-100 py-2 rounded-xl text-sm">Export Excel</button>
+                <button onclick="closeModal()" class="flex-1 bg-red-600 text-white py-2 rounded-xl text-sm">Selesai</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mustahiks = JSON.parse(localStorage.getItem('zmart_data')) || Array.from({length: 60}, (_, i) => ({
+            id: i + 1, name: `Mustahik ${i + 1}`, initialBalance: 0, transactions: []
+        }));
+
+        let activeId = null;
+
+        function saveData() {
+            localStorage.setItem('zmart_data', JSON.stringify(mustahiks));
+            updateUI();
+        }
+
+        function calculateMetrics(m) {
+            const inc = m.transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+            const exp = m.transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+            return { inc, exp, bal: m.initialBalance + inc - exp };
+        }
+
+        function updateUI() {
+            const grid = document.getElementById('mustahik-grid');
+            grid.innerHTML = mustahiks.map(m => {
+                const met = calculateMetrics(m);
+                return `
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-red-100 hover:shadow-md transition">
+                        <h3 class="font-bold text-lg text-slate-800">${m.name}</h3>
+                        <p class="text-sm text-slate-500">Saldo: <span class="font-semibold text-red-600">Rp ${met.bal.toLocaleString()}</span></p>
+                        <button onclick="openModal(${m.id})" class="mt-3 w-full bg-purple-100 text-purple-700 py-2 rounded-lg font-medium text-sm">Edit Data</button>
+                    </div>
+                `;
+            }).join('');
+            
+            const totalIncomes = mustahiks.map(m => calculateMetrics(m).inc);
+            const avg = totalIncomes.reduce((a,b)=>a+b, 0) / 60;
+            const maxVal = Math.max(...totalIncomes);
+            const minVal = Math.min(...totalIncomes);
+            const maxIdx = totalIncomes.indexOf(maxVal);
+            const minIdx = totalIncomes.indexOf(minVal);
+
+            document.getElementById('avg-income').innerText = `Rp ${Math.round(avg).toLocaleString()}`;
+            document.getElementById('max-income').innerHTML = `<span class="block text-xs text-red-400">${mustahiks[maxIdx].name}</span>Rp ${maxVal.toLocaleString()}`;
+            document.getElementById('min-income').innerHTML = `<span class="block text-xs text-red-400">${mustahiks[minIdx].name}</span>Rp ${minVal.toLocaleString()}`;
+        }
+
+        function openModal(id) {
+            activeId = id;
+            const m = mustahiks.find(x => x.id === id);
+            document.getElementById('edit-name').value = m.name;
+            document.getElementById('modal-balance').innerText = `Rp ${calculateMetrics(m).bal.toLocaleString()}`;
+            document.getElementById('modal').classList.remove('hidden');
+            document.getElementById('modal').classList.add('flex');
+            renderTransactions();
+        }
+
+        function closeModal() { document.getElementById('modal').classList.add('hidden'); saveData(); }
+        function updateName() { mustahiks.find(x => x.id === activeId).name = document.getElementById('edit-name').value; }
+
+        function addTransaction() {
+            const m = mustahiks.find(x => x.id === activeId);
+            m.transactions.push({ amount: parseInt(document.getElementById('new-amount').value), type: document.getElementById('new-type').value, date: new Date().toLocaleDateString() });
+            renderTransactions();
+            document.getElementById('modal-balance').innerText = `Rp ${calculateMetrics(m).bal.toLocaleString()}`;
+            document.getElementById('new-amount').value = '';
+        }
+
+        function renderTransactions() {
+            const m = mustahiks.find(x => x.id === activeId);
+            document.getElementById('transaction-list').innerHTML = m.transactions.map((t, i) => `
+                <div class="flex justify-between text-xs p-1"><span>${t.type}</span><span>Rp ${t.amount.toLocaleString()}</span></div>
+            `).join('');
+        }
+
+        function exportAllToExcel() {
+            let csv = "Nama,Saldo\n" + mustahiks.map(m => `${m.name},${calculateMetrics(m).bal}`).join("\n");
+            const a = document.createElement('a'); a.href = 'data:text/csv,' + encodeURI(csv); a.download = 'Data_Mustahik.csv'; a.click();
+        }
+
+        function exportIndividualToExcel() {
+            const m = mustahiks.find(x => x.id === activeId);
+            let csv = "Tipe,Jumlah\n" + m.transactions.map(t => `${t.type},${t.amount}`).join("\n");
+            const a = document.createElement('a'); a.href = 'data:text/csv,' + encodeURI(csv); a.download = `${m.name}_Laporan.csv`; a.click();
+        }
+
+        window.onload = updateUI;
+    </script>
+</body>
+</html>
